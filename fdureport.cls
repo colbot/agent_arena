@@ -1,8 +1,12 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesClass{fdureport}[2025/04/25 v0.1 Experiment report for FuDan University]
 
-\LoadClass[utf8,fontset=fandol,zihao=-4]{ctexart}
+\LoadClass[utf8,fontset=windows,zihao=-4]{ctexart}
 
+\RequirePackage{expl3}
+\RequirePackage{xparse}
+\RequirePackage{array}
+\RequirePackage{multirow}
 \RequirePackage{caption}
 \RequirePackage{geometry}
 \RequirePackage{graphicx}
@@ -19,13 +23,20 @@
 % section 
 \ctexset{
     section = {
-      format    = \rmfamily\bfseries\zihao{4},
-      indent    = 0pt,
-      number    = \chinese{section},
-      aftername = {、},
-     }
-}
-
+        format    = \rmfamily\bfseries\zihao{-2},
+        indent    = 0pt,
+        number    = \chinese{section},
+        aftername = {、},
+        },
+        subsection = {
+                format    = \rmfamily\bfseries\zihao{-3},
+                indent    = 0pt,
+            },
+        subsubsection = {
+                format    = \rmfamily\bfseries\zihao{-4},
+                indent    = 0pt,
+            },
+        }
 
 % caption
 \captionsetup[figure]{
@@ -37,42 +48,39 @@
     labelsep = quad,
 }
 
-% cover
-% \renewcommand{\title}[1]{
-%     \def\@title{#1}
-% }
+% cover page details
 
-\newcommand{\@lesson}{未指定课程}
+\ExplSyntaxOn
+\str_set:Nn \g_cover_detail_lesson {未指定课程}
 \newcommand{\lesson}[1]{
-    \renewcommand{\@lesson}{\bfseries 课程名称： & #1 \\}
+    \str_set:Nn \g_cover_detail_lesson {#1}
 }
 
-\newcommand{\@teacher}{未指定教师}
+\str_set:Nn \g_cover_detail_teacher {未指定教师}
 \newcommand{\teacher}[1]{
-    \renewcommand{\@teacher}{\bfseries 授课教师： & #1 \\}
+    \str_set:Nn \g_cover_detail_teacher {#1}
 }
 
-\newcommand{\@expgroup}{未指定组名}
+\str_set:Nn \g_cover_detail_group {未指定组名}
 \newcommand{\expgroup}[1]{
-    \renewcommand{\@expgroup}{\bfseries 实验小组: & #1 \\}
+    \str_set:Nn \g_cover_detail_group {#1}
 }
 
-\newcommand{\@expmembers}{无组员}
-% \makeatletter
-\newcommand{\expmembers}[1]{%
-    \renewcommand{\@expmembers}{第一个组员}%
-    % \@for\@temp:=#1\do{%
-    %     \ifx\@temp\@empty%
-    %     \else
-            % \ifx\@expmembers\@empty
-            %     \g@addto@macro\@expmembers{\@temp}%
-            % \else
-            %     \g@addto@macro\@expmembers{\par \@temp}%
-            % \fi
-    %     \fi
-    % }%
-}%
-% \makeatother
+\clist_set:Nn \g_cover_detail_members {无组员}
+\newcommand{\expmembers}[1]{
+    \clist_set:Nn \g_cover_detail_members {#1}
+}
+
+\newcommand{\makedetail}{
+    \begin{tabular}{l l}
+        \bfseries 课程名称：                                                        & \g_cover_detail_lesson  \\
+        \bfseries 授课教师：                                                        & \g_cover_detail_teacher \\
+        \bfseries 实验小组：                                                        & \g_cover_detail_group   \\
+        \multirow{\clist_count:N \g_cover_detail_members}{*}{\bfseries 小组成员： } &
+        \clist_use:Nn \g_cover_detail_members {                                                          \\ & }
+    \end{tabular} \par
+}
+\ExplSyntaxOff
 
 % redefine maketitle to generate cover page
 \newcommand{\makecover}{
@@ -83,12 +91,7 @@
         \vspace*{2cm}
         {\zihao{2}\bfseries\@title\par}
         {\vspace{8cm}}
-        \begin{tabular}{l l}\zihao{-4}
-            \@lesson
-            \@teacher
-            \@expgroup
-        \end{tabular} \par
-        {\@expmembers}
+        \makedetail
         \thispagestyle{empty}
     \end{titlepage}
 }
