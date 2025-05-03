@@ -1,9 +1,41 @@
 \documentclass{fdureport}
 \pagestyle{plain}
 
+% ref style
+\usepackage[nameinlink]{cleveref}
+\crefformat{equation}{#2\bfseries{公式#3}~#1#2#3} % 方程式引用格式
+\crefformat{figure}{#2\bfseries{图#3}~#1#2#3}     % 图表引用格式
+\crefformat{table}{#2\bfseries{表#3}~#1#2#3}      % 表格引用格式
+
+% code style
+\usepackage{listings}
+\lstset{
+    numbers=left,
+    numberstyle= \tiny,
+    % keywordstyle= \color{ blue!70},%设置关键字颜色
+    % commentstyle= \color{red!50!green!50!blue!50}, %设置注释颜色
+    frame=single, % 阴影效果
+    % rulesepcolor= \color{ red!20!green!20!blue!20} ,
+    escapeinside=``, % 英文分号中可写入中文
+    xleftmargin=2em, %距离左边界2em
+    aboveskip=1em,
+    framexleftmargin=2em,
+    basicstyle=\linespread{1.0} \ttfamily,
+    columns=fullflexible,%可以自动换行
+    linewidth=1\linewidth, %设置代码块与行同宽
+    breaklines=true,%在单词边界处换行。
+    showstringspaces=false， %去掉空格时产生的下划的空格标志, 设置为true则出现
+    breakatwhitespace=ture,%可以在空格处换行
+    escapechar=`%设置转义字符为反引号
+}
+
+% list style
+\usepackage{enumitem}
+\setenumerate[1]{itemsep=0pt, parsep=\parskip, partopsep=0pt, topsep=5pt}
+
 \begin{document}
 
-\title{基于腾讯开悟平台的PPO实验}
+\title{基于腾讯开悟教学平台采用PPO算法进行的智能体决策1V1实验}
 \lesson{神经网络和深度学习}
 \teacher{赵卫东}
 \expgroup{DayDayUp}
@@ -11,19 +43,22 @@
 
 \makecover
 
+\setcounter{tocdepth}{2}
 \tableofcontents
+\newpage
 
+\graphicspath{{figure}}
 % section 1 
-\include{section/exp_target}
+\include*{section/exp_target}
 
 % section 2
-\include{section/exp_env}
+\include*{section/exp_env}
 
 % section 3
-\include{section/exp_design}
+\include*{section/exp_design}
 
-\include{section/exp_process}
+\include*{section/exp_process}
 
-\include{section/exp_conclusion}
+\include*{section/exp_conclusion}
 
 \end{document}

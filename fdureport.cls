@@ -12,13 +12,18 @@
 \RequirePackage{graphicx}
 \RequirePackage{titling}
 \RequirePackage{color}
+\RequirePackage{newclude}
 
 % geometry
 \geometry{
     a4paper,
-    margin = 2.5cm,
+    vmargin = 2.54cm,
+    hmargin = 3.18cm,
     footnotesep = 0.5cm,
 }
+
+% line height
+\linespread{1.5}
 
 % section 
 \ctexset{
@@ -27,14 +32,17 @@
         indent    = 0pt,
         number    = \chinese{section},
         aftername = {、},
+        afterskip = 0.5em plus 0.2em minus 0.1em,
         },
         subsection = {
                 format    = \rmfamily\bfseries\zihao{-3},
                 indent    = 0pt,
+                afterskip = 0.25em plus 0.1em minus 0.1em,
             },
         subsubsection = {
                 format    = \rmfamily\bfseries\zihao{-4},
                 indent    = 0pt,
+                afterskip = 0.25em plus 0.1em minus 0.1em,
             },
         }
 
@@ -42,10 +50,12 @@
 \captionsetup[figure]{
     font     = small,
     labelsep = quad,
+    labelfont = bf,
 }
 \captionsetup[table]{
     font     = small,
     labelsep = quad,
+    labelfont = bf,
 }
 
 % cover page details
@@ -72,7 +82,7 @@
 }
 
 \newcommand{\makedetail}{
-    \begin{tabular}{l l}
+    \begin{tabular}{l l}\linespread{1.0}
         \bfseries 课程名称：                                                        & \g_cover_detail_lesson  \\
         \bfseries 授课教师：                                                        & \g_cover_detail_teacher \\
         \bfseries 实验小组：                                                        & \g_cover_detail_group   \\
@@ -85,6 +95,7 @@
 % redefine maketitle to generate cover page
 \newcommand{\makecover}{
     \begin{titlepage}
+        \linespread{1.2}
         \centering
         \vspace*{2cm}
         \includegraphics[width=0.5\textwidth]{template/fdu_logo_zh_en.png} \\
@@ -94,4 +105,13 @@
         \makedetail
         \thispagestyle{empty}
     \end{titlepage}
+}
+
+\newcommand{\imagefigure}[4][0.8]{
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=#1\textwidth]{#2}
+        \caption{#4}
+        \label{fig:#3}
+    \end{figure}
 }
