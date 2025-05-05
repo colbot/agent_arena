@@ -11,22 +11,24 @@
 \usepackage{listings}
 \lstset{
     numbers=left,
-    numberstyle= \tiny,
-    % keywordstyle= \color{ blue!70},%设置关键字颜色
-    % commentstyle= \color{red!50!green!50!blue!50}, %设置注释颜色
+    numberstyle=\tiny\color{lightgray},
+    backgroundcolor=\color{lightgray!20},
+    keywordstyle= \color{ blue!70}\bfseries,%设置关键字颜色
+    commentstyle=\color{green!40!black}, %设置注释颜色
+    stringstyle=\color{red}, % 字符串颜色
     frame=single, % 阴影效果
-    % rulesepcolor= \color{ red!20!green!20!blue!20} ,
+    rulesepcolor= \color{ red!20!green!20!blue!20} ,
     escapeinside=``, % 英文分号中可写入中文
-    xleftmargin=2em, %距离左边界2em
-    aboveskip=1em,
-    framexleftmargin=2em,
-    basicstyle=\linespread{1.0} \ttfamily,
-    columns=fullflexible,%可以自动换行
-    linewidth=1\linewidth, %设置代码块与行同宽
+    escapechar=`,%设置转义字符为反引号
+    basicstyle=\linespread{1.0} \ttfamily \small,
     breaklines=true,%在单词边界处换行。
     showstringspaces=false， %去掉空格时产生的下划的空格标志, 设置为true则出现
-    breakatwhitespace=ture,%可以在空格处换行
-    escapechar=`%设置转义字符为反引号
+    columns=fullflexible,%可以自动换行
+    % xleftmargin=2em, %距离左边界2em
+    % aboveskip=1em,
+    % framexleftmargin=2em,
+    % linewidth=1\linewidth, %设置代码块与行同宽
+    % breakatwhitespace=ture,%可以在空格处换行
 }
 
 % list style
@@ -43,8 +45,11 @@
 
 \makecover
 
+{
+\linespread{1.2} \selectfont
 \setcounter{tocdepth}{2}
 \tableofcontents
+}
 \newpage
 
 \graphicspath{{figure}}
@@ -52,7 +57,7 @@
 \include*{section/exp_target}
 
 % section 2
-\include*{section/exp_env}
+\include*{section/exp_frame}
 
 % section 3
 \include*{section/exp_design}

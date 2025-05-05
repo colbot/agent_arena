@@ -16,13 +16,223 @@
 
 环境返回的观测信息obs对应与PPO算法中的状态s。开悟平台的实验环境中已经对这部分数据做了预处理，但是智能体需要的状态信息s和环境观测信息obs之间存在一定差异，这部分由observation\_process函数将环境提供的观测信息转换为智能体需要的状态信息。同理，action\_process函数用于将智能体选择的动作转换为环境可以识别的动作。sample\_process用于将环境交互数据和奖励打包成样本数据，用于经验回放。在分布式训练中，样本数据需要通过网络传输至样本池，因此需要对SampleData进行序列化和反序列化，此处应该注意序列化编码和解码的对应，防止数据出错。
 
-\subsection{PPO截断}
-
 \subsection{奖励函数}
 
+\imagefigure[0.6]{reduce_factor.png}{reduce_factor}{英雄等级衰减因子}
+
+智能体决策1V1实验的游戏回合状态比较复杂，因此其奖励函数的设计需要考虑的因素也比较多。考虑游戏中英雄的奖励应该是对拆毁敌方水晶有帮助的因素，主要包括：经济，经验，生存状态，攻击状态，英雄位置，技能使用的条件，空闲时的行为，以及对获胜条件的考量。
+
+
+考虑到对战回合中随着游戏的进行和英雄等级的提升，同等金钱和经验对英雄的提升逐渐降低，构造一个随着英雄等级变化的动态因子 level\_factor 来处理奖励随英雄等级变化的衰减。此处选用幂函数即可，衰减因子定义为：
+
+\begin{equation}
+    f = 0.95^{x}
+\end{equation}
+
+英雄共有15个等级，衰减因子曲线如 \cref{fig:reduce_factor} 所示。从开局的1.0衰减到15级时的约0.46。
+
 \subsubsection{状态检测}
+
+智能体决策1V1是对战游戏，因此在做状态检测时应该考虑敌我双方的状态对比，而不仅是状态的绝对值。代码框架中使用 GameRewardManager 来管理所有奖励，从游戏的帧状态信息 frame\_data 提取所有需要关注的数据，并对比前后两帧的数据变化和敌我双方的数据对比。
+
+
+随着游戏进行，士兵的生命和攻击强度会逐步提升，英雄的生命和攻击输出也会逐渐增加，在游戏回合中需要关注双方士兵和英雄的状态，用于动态计算奖励。
+从 frame\_data 中获取敌我双方英雄的代码如下所示：
+
+\begin{lstlisting}[language=Python]
+main_hero, enemy_hero = None, None
+hero_list = frame_data["hero_states"]
+for hero in hero_list:
+    hero_camp = hero["actor_state"]["camp"]
+    if hero_camp == camp:
+        main_hero = hero
+    else:
+        enemy_hero = hero
+\end{lstlisting}
+
+敌方英雄不在视野中时，敌方英雄的数据会是默认值，需要进行区分。其次是双方防御塔的状态，获取状态的代码如下：
+
+\begin{lstlisting}[language=Python]
+main_tower, main_spring = None, None
+enemy_tower, enemy_spring = None, None
+npc_list = frame_data["npc_states"]
+for organ in npc_list:
+    organ_camp = organ["camp"]
+    organ_subtype = organ["sub_type"]
+    if organ_camp == camp:
+        if organ_subtype == "ACTOR_SUB_TOWER":  # 21 is tower
+            main_tower = organ
+        elif organ_subtype == "ACTOR_SUB_CRYSTAL":  # 24 is crystal
+            main_spring = organ
+    else:
+        if organ_subtype == "ACTOR_SUB_TOWER":  # 21 is tower
+            enemy_tower = organ
+        elif organ_subtype == "ACTOR_SUB_CRYSTAL":  # 24 is crystal
+            enemy_spring = organ
+\end{lstlisting}
+
 \subsubsection{经济奖励}
+
+游戏回合中，英雄的经济主要表现为获得的金钱数据，金钱用于购买装备提升生命值、攻击输出和伤害抗性。英雄的装备购买列表和顺序已经固定，当金钱足够时会自动进行购买，无需关注金钱的使用。智能体决策1V1实验中设置了特殊模式，购买装备只计算已经获得金钱总额，不会进行扣减。同时，注意到同等经济在回合初期和回合后期对英雄的提升有区别，回合后期英雄本身具有较高的属性，同样的金钱购买的装备在回合初期对英雄提升较多而在回合后期对英雄提升较少。因此对经济的奖励应该按照英雄等级进行折算。计算经济奖励的代码实现如下：
+
+\begin{lstlisting}[language=Python]
+if reward_name == "money":
+    money = main_hero["moneyCnt"]
+    reward_struct.cur_frame_value = money * level_factor
+\end{lstlisting}
+
 \subsubsection{经验奖励}
-\subsubsection{技能使用条件与奖励}
+
+游戏回合中，英雄的经验用于升级，升级后可以增加自身属性。实验中每个英雄属性的分配方式和顺序已经固定，无需关注。同样随着英雄等级的提升，升级所需要的经验会逐渐上升，经验的作用减弱。因此同样对经验的奖励按照等级折算。另外升级会消耗英雄经验值，因此计算英雄获取的总经验时应该加上当前等级已经消耗的升级经验。计算经验奖励的代码实现如下：
+
+\begin{lstlisting}[language=Python]
+def calculate_exp_sum(self, this_hero_info, level_factor):
+    level_exp_cost = [
+        0, 160, 458, 904, 1428,
+        2041, 2754, 3579, 4529, 5617,
+        6857, 8263, 9848, 11626, 13610]
+    hero_level = this_hero_info["level"]
+    base_exp = level_exp_cost[hero_level]
+    exp_sum = base_exp + this_hero_info["exp"]
+    exp_sum = exp_sum * level_factor
+    return exp_sum
+\end{lstlisting}
+
+\subsubsection{生存状态}
+
+英雄的生存状态包括生命值和法力值两项，为了游戏回合中数据的一致性，对生命值和法力值做归一化，计算为生命值和法力值的百分比。生存状态既可以直接计算奖励，也可以和动作同时计算奖励，比如血量较低时应该优先考虑后退和召回。也可以在动作的 legal 中加入生存状态的考量。计算生命值和法力值的代码如下：
+
+\begin{lstlisting}[language=Python]
+if reward_name == "hp_point":
+    reward_struct.cur_frame_value = math.sqrt(math.sqrt(1.0 * main_hero_hp / main_hero_max_hp))
+elif reward_name == "ep_rate":
+    if main_hero_max_ep == 0 or main_hero_hp <= 0:
+        reward_struct.cur_frame_value = 0
+    else:
+        reward_struct.cur_frame_value = main_hero_ep / float(main_hero_max_ep)
+\end{lstlisting}
+
+\subsubsection{攻击状态}
+
+英雄击杀对方英雄时应该获得奖励，自身死亡时进行惩罚（负奖励）。战绩可以通过英雄状态中 \verb|"killCnt"| 和 \verb|"deadCnt"| 字段获得。
+另外，英雄完成对士兵、敌方英雄和丛林野怪死亡前的最后一击，可以获得高额的金钱和经验，该行为称为“补刀”。需要在游戏中让英雄尽可能多的完成补刀行为，以获取较高的经济和经验成长。此处补刀行为仅考虑对方士兵即可，因为己方士兵通常不会攻击敌方英雄和丛林野怪，而且击杀敌方英雄和丛林野怪已经有远超击杀敌方士兵的金钱和经验奖励。计算补刀奖励的代码如下：
+
+\begin{lstlisting}[language=Python]
+reward_struct.cur_frame_value = 0.0
+frame_action = frame_data["frame_action"]
+if "dead_action" in frame_action:
+    dead_actions = frame_action["dead_action"]
+    for dead_action in dead_actions:
+        if (
+            dead_action["killer"]["runtime_id"] == main_hero["actor_state"]["runtime_id"]
+            and dead_action["death"]["sub_type"] == "ACTOR_SUB_SOLDIER"
+        ):
+            reward_struct.cur_frame_value += 1.0
+        elif (
+            dead_action["killer"]["runtime_id"] == enemy_hero["actor_state"]["runtime_id"]
+            and dead_action["death"]["sub_type"] == "ACTOR_SUB_SOLDIER"
+        ):
+            reward_struct.cur_frame_value -= 1.0
+\end{lstlisting}
+
+\subsubsection{英雄位置}
+
+\imagefigure[0.6]{born.png}{born}{英雄出生位置}
+
+在游戏中，英雄通常需要不断向敌方推进。在对战地图中，无论红蓝阵营，己方位于地图左下角，敌方位于右上角。英雄的出生位置位于左下方，如 \cref{fig:born} 所示。因此大体上英雄应该朝向右上方前进，或者为了通用性，英雄应该沿着双方水晶连线方向作为进攻方向。在没有其他需要考虑的情况下，英雄的位置按照靠近敌方防御塔来计算基础奖励，此时英雄未进入战场。基础位置奖励的计算代码如下：
+
+\begin{lstlisting}[language=Python]
+def calculate_forward(self, main_hero, main_tower, enemy_tower):
+    main_tower_pos = (main_tower["location"]["x"], main_tower["location"]["z"])
+    enemy_tower_pos = (enemy_tower["location"]["x"], enemy_tower["location"]["z"])
+    hero_pos = (
+        main_hero["actor_state"]["location"]["x"],
+        main_hero["actor_state"]["location"]["z"],
+    )
+    forward_value = 0
+    dist_hero2emy = math.dist(hero_pos, enemy_tower_pos)
+    dist_main2emy = math.dist(main_tower_pos, enemy_tower_pos)
+    hero_hp = main_hero["actor_state"]["hp"] / main_hero["actor_state"]["max_hp"]
+    if hero_hp > 0.75:
+        forward_value = (dist_main2emy - dist_hero2emy) / dist_main2emy
+    return forward_value
+\end{lstlisting}
+
+\imagefigure[0.6]{lane.png}{lane}{兵线}
+另外，在接触到敌方角色时，英雄需要考虑攻击和受伤害的范围，选择合适的战场位置，这个位置通常被称为“站位”。站位需要考虑的几个因素包括：兵线，防御塔范围。士兵通常会攻击距离最近的敌方阵营，因此在对战时，英雄应该站在士兵后方位置，己方士兵离敌方攻击单位最近的位置，称为兵线。如图 \cref{fig:lane} 所示，通常英雄不应该跨过该线。
+
+\imagefigure[0.6]{against_mobs.png}{against_mobs}{英雄被对方士兵优先攻击}
+英雄越过己方兵线后会被敌方阵营优先攻击，如 \cref{fig:against_mobs} 所示，此时智能体应该考虑控制角色后退，回到兵线后或者己方防御塔范围内。
+
+\imagefigure[0.6]{against_tower.png}{against_tower}{英雄被防御塔攻击}
+防御塔会对进入防御范围内的敌方阵营发动攻击，通常选择攻击离防御塔最近的敌方单位，但是在己方英雄遭受攻击且发动攻击的敌方处于防御塔范围内时会优先进行反击。防御塔的伤害比较高，通常英雄进入防御塔范围内时应该处于兵线的保护下。如果没有兵线保护，会被防御塔攻击，称为抗塔，如 \cref{fig:against_tower} 所示，这种情况下英雄会很快死亡。
+
+\imagefigure[0.6]{over_tower.png}{over_tower}{英雄越过敌方防御塔}
+大多数时候英雄不应该越过敌方防御塔，因为己方士兵会在遇到敌方阵营时进行攻击并停止前进，英雄越过敌方防御塔会失去己方兵线的保护，并不断的遭遇后续敌方阵营的攻击，如 \cref{fig:over_tower} 所示，这种行为称为“越塔”。通常越塔有固定的使用场景和攻击模式，即在追击敌方英雄且有兵线保护的情况下，进入敌方防御塔范围内，此时攻击敌方英雄会被防御塔优先反击，可以继续追踪到越塔后开始攻击敌方英雄，同时使用闪现技能迅速跳出防御塔攻击范围，击杀敌方英雄后使用召回技能传送回己方泉水法阵。在多英雄对战时可以考虑这种行为模式，单英雄对战时，越塔追踪并击杀敌方英雄获得的优势并不超过跟随兵线攻击敌方防御塔。
+
+
+综合以上几点，在遭遇敌方角色时英雄应该站在兵线后，没有敌方角色时，英雄只在有兵线保护的情况下进入防御塔范围，此时称为英雄进入战场。英雄战场位置的奖励分为遭遇检测，兵线检测，位置惩罚三部分。其中遭遇检测判断英雄是否进入敌方阵营的攻击范围，由于无法获得敌方英雄的攻击范围，敌方英雄的对战奖励由伤害检测来反馈。具体的检测代码如下：
+
+\begin{lstlisting}[language=Python]
+def is_encounter(loc, enemy):
+    enemy_pos = (enemy['location']['x'], enemy['location']['z'])
+    dist = int(math.dist(loc, enemy_pos))
+    return dist <= int(enemy['attack_range']), dist
+\end{lstlisting}
+
+兵线通过检测己方阵营到指定敌方目标的距离实现，如果有更接近目标的己方单位，则英雄处于安全位置。具体的检测代码如下：
+
+\begin{lstlisting}[language=Python]
+def is_safe(enemy, teams, dist):
+    enemy_pos = (enemy['location']['x'], enemy['location']['z'])
+    for member in teams:
+        member_pos = (member['location']['x'], member['location']['z'])
+        if int(math.dist(enemy_pos, member_pos)) < dist:
+            return True
+    return False
+\end{lstlisting}
+
+战场位置惩罚按照进入攻击范围的距离来计算，如果英雄处于所有敌方阵营的攻击范围之外，那么英雄是安全的。具体的计算代码如下：
+
+\begin{lstlisting}[language=Python]
+def position_penalty(enemy, dist):
+    attack_range = float(enemy['attack_range'])
+    if float(dist) > attack_range:
+        return 0.0
+    return (attack_range - float(dist)) / attack_range
+\end{lstlisting}
+
+另外考虑到防御塔的攻击远远超出普通士兵，在位置惩罚中对敌方防御塔带来的惩罚加上较高的权重。完整计算战场位置奖励的代码为：
+
+\begin{lstlisting}[language=Python]
+def calculate_wartime_lane(main_hero, main_tower, enemy_tower, main_roles, enemy_roles):
+    position_sum = 0.0
+    team_members = [main_tower, *main_roles]
+    main_hero_pos = (main_hero['location']['x'], main_hero['location']['z'])
+    wartime = False
+    encounter, hero2enemy_dist = is_encounter(main_hero_pos, enemy_tower)
+    wartime &= encounter
+    if encounter and not is_safe(enemy_tower, team_members, hero2enemy_dist):
+        position_sum -= position_penalty(enemy_tower, hero2enemy_dist) * 10
+
+    for enemy in enemy_roles:
+        encounter, hero2enemy_dist = is_encounter(main_hero_pos, enemy)
+        wartime &= encounter
+        if encounter and not is_safe(enemy, team_members, hero2enemy_dist):
+            position_sum -= position_penalty(enemy, hero2enemy_dist)
+    return wartime, position_sum
+\end{lstlisting}
+
+\imagefigure[0.6]{treatment.png}{treatment}{治疗符文}
+双方防御塔下会定期刷新治疗符文，如 \cref{fig:treatment} 拾取后可以迅速回复大量生命值。当英雄生命值较低时，应该主动朝治疗符文位置移动去进行拾取。另外，治疗符文不区分阵营，在英雄靠近敌方防御塔下治疗符文且有兵线存在的情况下，应该主动拾取敌方防御塔下的治疗符文，达到削弱敌方的目的。对战中，在生命值低于30\%时应该考虑后退寻找己方防御塔下治疗符文，在生命值低于70\%且视野范围内有安全的治疗符文时，应该考虑拾取。
+
 \subsubsection{获胜奖励}
-\subsubsection{惩罚}
+当英雄在兵线的保护下进入敌方防御塔范围内时，在补刀之外，应该考虑攻击敌方防御塔。此外当敌方防御塔血量较低时，英雄应该提高攻击敌方防御塔的优先级。
+
+\subsection{学习策略}
+
+\subsubsection{PPO截断}
+\subsubsection{奖励趋势调整}
+训练前期，偏重具体行为相关的稠密奖励，引导智能体学会基本操作
+训练中期，增强与对局结果强相关的稠密奖励，引导智能体在单局中建立优势
+训练后期，调高稀疏奖励权重，引导智能体直接关注最终胜负

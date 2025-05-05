@@ -11,7 +11,7 @@
 \RequirePackage{geometry}
 \RequirePackage{graphicx}
 \RequirePackage{titling}
-\RequirePackage{color}
+\RequirePackage{xcolor}
 \RequirePackage{newclude}
 
 % geometry
@@ -82,12 +82,12 @@
 }
 
 \newcommand{\makedetail}{
-    \begin{tabular}{l l}\linespread{1.0}
-        \bfseries 课程名称：                                                        & \g_cover_detail_lesson  \\
-        \bfseries 授课教师：                                                        & \g_cover_detail_teacher \\
-        \bfseries 实验小组：                                                        & \g_cover_detail_group   \\
-        \multirow{\clist_count:N \g_cover_detail_members}{*}{\bfseries 小组成员： } &
-        \clist_use:Nn \g_cover_detail_members {                                                          \\ & }
+    \begin{tabular}{l l}
+    \bfseries 课程名称：                                & \g_cover_detail_lesson  \\
+    \bfseries 授课教师：                                & \g_cover_detail_teacher \\
+    \bfseries 实验小组：                                & \g_cover_detail_group   \\
+    \multirow{\clist_count:N \g_cover_detail_members}{*}{\bfseries 小组成员： } &
+    \clist_use:Nn \g_cover_detail_members { \\ & }
     \end{tabular} \par
 }
 \ExplSyntaxOff
@@ -95,7 +95,7 @@
 % redefine maketitle to generate cover page
 \newcommand{\makecover}{
     \begin{titlepage}
-        \linespread{1.2}
+        \linespread{1.2} \selectfont
         \centering
         \vspace*{2cm}
         \includegraphics[width=0.5\textwidth]{template/fdu_logo_zh_en.png} \\
@@ -108,7 +108,7 @@
 }
 
 \newcommand{\imagefigure}[4][0.8]{
-    \begin{figure}[h]
+    \begin{figure}[htb]
         \centering
         \includegraphics[width=#1\textwidth]{#2}
         \caption{#4}

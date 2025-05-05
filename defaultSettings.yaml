@@ -1,0 +1,9 @@
+defaultIndent: " "
+
+verbatimEnvironments:
+    verbatim: 1
+    lstlisting: 1
+
+noIndentBlock:
+    noindent: 1
+    cmhtest: 1
