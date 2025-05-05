@@ -202,36 +202,106 @@ def position_penalty(enemy, dist):
     return (attack_range - float(dist)) / attack_range
 \end{lstlisting}
 
-另外考虑到防御塔的攻击远远超出普通士兵，在位置惩罚中对敌方防御塔带来的惩罚加上较高的权重。完整计算战场位置奖励的代码为：
-
-\begin{lstlisting}[language=Python]
-def calculate_wartime_lane(main_hero, main_tower, enemy_tower, main_roles, enemy_roles):
-    position_sum = 0.0
-    team_members = [main_tower, *main_roles]
-    main_hero_pos = (main_hero['location']['x'], main_hero['location']['z'])
-    wartime = False
-    encounter, hero2enemy_dist = is_encounter(main_hero_pos, enemy_tower)
-    wartime &= encounter
-    if encounter and not is_safe(enemy_tower, team_members, hero2enemy_dist):
-        position_sum -= position_penalty(enemy_tower, hero2enemy_dist) * 10
-
-    for enemy in enemy_roles:
-        encounter, hero2enemy_dist = is_encounter(main_hero_pos, enemy)
-        wartime &= encounter
-        if encounter and not is_safe(enemy, team_members, hero2enemy_dist):
-            position_sum -= position_penalty(enemy, hero2enemy_dist)
-    return wartime, position_sum
-\end{lstlisting}
+另外考虑到防御塔的攻击远远超出普通士兵，在位置惩罚中对敌方防御塔带来的惩罚加上较高的权重。
 
 \imagefigure[0.6]{treatment.png}{treatment}{治疗符文}
-双方防御塔下会定期刷新治疗符文，如 \cref{fig:treatment} 拾取后可以迅速回复大量生命值。当英雄生命值较低时，应该主动朝治疗符文位置移动去进行拾取。另外，治疗符文不区分阵营，在英雄靠近敌方防御塔下治疗符文且有兵线存在的情况下，应该主动拾取敌方防御塔下的治疗符文，达到削弱敌方的目的。对战中，在生命值低于30\%时应该考虑后退寻找己方防御塔下治疗符文，在生命值低于70\%且视野范围内有安全的治疗符文时，应该考虑拾取。
+
+双方防御塔下会定期刷新治疗符文，如 \cref{fig:treatment} 拾取后可以迅速回复大量生命值。当英雄生命值较低时，应该主动朝治疗符文位置移动去进行拾取。另外，治疗符文不区分阵营，在英雄靠近敌方防御塔下治疗符文且有兵线存在的情况下，应该主动拾取敌方防御塔下的治疗符文，达到削弱敌方的目的。对战中，在生命值低于30\%时应该考虑后退寻找己方防御塔下治疗符文，在生命值低于75\%且视野范围内有安全的治疗符文时，应该考虑拾取。治疗符文的数据仅当符文出现在英雄视野中时才有相关信息。数据结构如下：
+
+\begin{lstlisting}[language=Python]
+[{
+    'configId': 5,
+    'collider': {
+        'location': {
+            'x': 15340,
+            'y': 48,
+            'z': 15100
+        },
+        'radius': 0
+    }
+},
+{
+    'configId': 5,
+    'collider': {
+        'location': {
+            'x': -15220,
+            'y': 48,
+            'z': -15120
+        },
+        'radius': 0
+    }
+}]
+\end{lstlisting}
+
+寻找最近的治疗符文并且判断是否需要拾取的代码实现如下：
+
+\begin{lstlisting}[language=Python]
+def calculate_cake_lure(self, main_hero, cakes, pass_by=5000):
+    if cakes is None or len(cakes) < 1:
+        return False, (0, 0)
+    hero_state = main_hero['actor_state']
+    hp = float(hero_state['hp']) / float(hero_state['max_hp'])
+    if hp > 0.75:
+        return False, (0, 0)
+    target_cakes = []
+    hero_pos = hero_state['location']['x'], hero_state['location']['z']
+    for cake in cakes:
+        cake_pos = cake['collider']['location']['x'], cake['collider']['location']['z']
+        cake_dist = math.dist(hero_pos, cake_pos)
+        target_cakes.append((cake_dist, cake_pos))
+    target_cakes.sort(key=lambda x: x[0])
+    best_dist, best_pos = target_cakes[0]
+    get_cake = best_dist < float(pass_by) or hp < 0.3
+    return get_cake, best_pos
+\end{lstlisting}
+
+整合以上三点，最终英雄移动和站位的奖励函数实现如下：
+
+\begin{lstlisting}[language=Python]
+forward_reward = self.calculate_forward(main_hero, main_tower, enemy_tower)
+wartime, position_reward = self.calculate_wartime_lane(main_hero, main_tower,enemy_tower, main_roles, enemy_roles)
+need_cake, cake_dist = self.calculate_cake_lure(main_hero, cakes)
+cake_reward = 1.0 - cake_dist/10000.0
+if need_cake:
+    reward_struct.cur_frame_value = cake_reward
+elif wartime:
+    reward_struct.cur_frame_value = position_reward
+else:
+    reward_struct.cur_frame_value = forward_reward
+\end{lstlisting}
 
 \subsubsection{获胜奖励}
-当英雄在兵线的保护下进入敌方防御塔范围内时，在补刀之外，应该考虑攻击敌方防御塔。此外当敌方防御塔血量较低时，英雄应该提高攻击敌方防御塔的优先级。
+
+\imagefigure[0.6]{blood_factor.png}{blood_factor}{敌方防御塔生命值奖励因子}
+
+当英雄在兵线的保护下进入敌方防御塔范围内时，补刀之外，应该考虑攻击敌方防御塔。此外当敌方防御塔血量较低时，英雄应该提高攻击敌方防御塔的优先级，以达到快速获胜的目的。当英雄攻击敌方防御塔时，按照防御塔的血量百分比，以指数方式计算奖励。公式为：
+
+\begin{equation}
+    r = (1 - h) ^ {3}
+\end{equation}
+
+依据敌方防御塔生命值百分比，奖励因子从0到1，如 \cref{fig:blood_factor} 所示。具体的获胜奖励实现代码为：
+
+\begin{lstlisting}[language=Python]
+def calculate_tower_hit(self, main_hero, enemy_tower):
+    hit_target = main_hero['hero_states']['actor_state']['hit_target_info']
+    enemy_tower_id = enemy_tower['config_id']
+    hit_tower = False
+    for target in hit_target:
+        if target['hit_target'] == enemy_tower_id:
+            hit_tower = True
+            return
+    enemy_tower_hp = float(enemy_tower['hp']) / float(enemy_tower['max_hp'])
+    target_reward = math.pow(1.0 - enemy_tower_hp, 3.0)
+    return hit_tower,target_reward
+\end{lstlisting}
 
 \subsection{学习策略}
 
 \subsubsection{PPO截断}
+
+
+
 \subsubsection{奖励趋势调整}
 训练前期，偏重具体行为相关的稠密奖励，引导智能体学会基本操作
 训练中期，增强与对局结果强相关的稠密奖励，引导智能体在单局中建立优势
